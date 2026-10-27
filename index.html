@@ -1,0 +1,1004 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Atmospheric Glass Weather App</title>
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Font Awesome Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <!-- Google Fonts: Inter and Playfair Display -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Alex+Brush&family=Inter:wght@300;400;500;600;700&family=Playfair+Display:ital,wght@0,400;0,600;1,400&display=swap" rel="stylesheet">
+
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'sans-serif'],
+            serif: ['Playfair Display', 'serif'],
+            cursive: ['Alex Brush', 'cursive']
+          },
+          colors: {
+            glass: 'rgba(255, 255, 255, 0.22)',
+            glassDark: 'rgba(15, 23, 42, 0.45)',
+            glassBorder: 'rgba(255, 255, 255, 0.35)',
+          }
+        }
+      }
+    }
+  </script>
+
+  <style>
+    /* Custom Scrollbar for hourly view */
+    .custom-scrollbar::-webkit-scrollbar {
+      height: 6px;
+      width: 6px;
+    }
+    .custom-scrollbar::-webkit-scrollbar-track {
+      background: rgba(255, 255, 255, 0.1);
+      border-radius: 8px;
+    }
+    .custom-scrollbar::-webkit-scrollbar-thumb {
+      background: rgba(255, 255, 255, 0.35);
+      border-radius: 8px;
+    }
+    .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+      background: rgba(255, 255, 255, 0.55);
+    }
+
+    /* Glassmorphism utility */
+    .glass-card {
+      background: rgba(255, 255, 255, 0.15);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border: 1px solid rgba(255, 255, 255, 0.3);
+      box-shadow: 0 20px 50px rgba(0, 0, 0, 0.3);
+    }
+
+    /* Floating cloud / aesthetic decor animations */
+    @keyframes floatSlow {
+      0%, 100% { transform: translateY(0px) rotate(0deg); }
+      50% { transform: translateY(-12px) rotate(1deg); }
+    }
+    @keyframes floatButterfly {
+      0%, 100% { transform: translate(0, 0) rotate(0deg) scale(1); }
+      25% { transform: translate(8px, -15px) rotate(5deg) scale(1.05); }
+      75% { transform: translate(-5px, -8px) rotate(-3deg) scale(0.98); }
+    }
+    .animate-float {
+      animation: floatSlow 6s ease-in-out infinite;
+    }
+    .animate-butterfly {
+      animation: floatButterfly 8s ease-in-out infinite;
+    }
+
+    /* Temperature Typography Styling like the provided image */
+    .temp-number {
+      font-family: 'Playfair Display', serif;
+      font-style: italic;
+      line-height: 0.95;
+    }
+
+    /* Background canvas full cover */
+    #weatherCanvas {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      z-index: 0;
+      pointer-events: none;
+    }
+  </style>
+</head>
+<body class="bg-slate-950 text-white min-h-screen flex flex-col justify-between overflow-x-hidden relative font-sans select-none">
+
+  <!-- Fullscreen HTML5 Canvas for Dynamic Live Animated Weather Engine -->
+  <canvas id="weatherCanvas"></canvas>
+
+  <!-- Atmospheric Overlay for Smooth Contrast -->
+  <div id="moodOverlay" class="fixed inset-0 z-[1] transition-all duration-1000 bg-gradient-to-b from-black/30 via-transparent to-black/50 pointer-events-none"></div>
+
+  <!-- Main Application Container -->
+  <div class="relative z-10 flex flex-col min-h-screen justify-between p-4 md:p-8 max-w-7xl mx-auto w-full">
+    
+    <!-- Header Controls -->
+    <header class="flex flex-wrap items-center justify-between gap-4 mb-6">
+      <!-- Search Input Container -->
+      <div class="relative flex-1 min-w-[240px] max-w-md">
+        <div class="relative flex items-center">
+          <i class="fa-solid fa-magnifying-glass absolute left-4 text-white/70"></i>
+          <input type="text" id="searchInput" placeholder="Search city (e.g., London, Tokyo, New York)..." 
+            class="w-full pl-11 pr-12 py-3 rounded-full bg-white/20 backdrop-blur-md border border-white/30 text-white placeholder-white/70 focus:outline-none focus:ring-2 focus:ring-white/50 text-sm shadow-lg transition-all">
+          <button id="geoBtn" title="Use current location" class="absolute right-2 p-2 rounded-full hover:bg-white/20 text-white/90 transition-all">
+            <i class="fa-solid fa-location-crosshairs"></i>
+          </button>
+        </div>
+        <!-- Search Dropdown Suggestions -->
+        <div id="searchResults" class="hidden absolute top-full left-0 right-0 mt-2 bg-slate-900/90 backdrop-blur-xl border border-white/20 rounded-2xl overflow-hidden z-50 shadow-2xl"></div>
+      </div>
+
+      <!-- Live Weather Automatic Sync Indicator -->
+      <div class="flex items-center gap-2">
+        <span class="text-xs font-semibold uppercase tracking-wider text-white/90 bg-emerald-500/20 px-3.5 py-2 rounded-full border border-emerald-400/30 backdrop-blur-md flex items-center gap-2 shadow-lg">
+          <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+          Live Weather Sync
+        </span>
+      </div>
+    </header>
+
+    <!-- Main Content Layout Matching User Design -->
+    <main class="grid grid-cols-1 lg:grid-cols-12 gap-6 my-auto items-stretch">
+      
+      <!-- LEFT FROSTED GLASS CARD -->
+      <div class="lg:col-span-5 flex flex-col justify-between glass-card rounded-3xl p-6 sm:p-8 relative overflow-hidden min-h-[440px]">
+        
+        <!-- Decorative Glow Accents -->
+        <div class="absolute -top-10 -left-10 w-40 h-40 bg-white/10 rounded-full blur-2xl pointer-events-none"></div>
+        <div class="absolute -bottom-10 -right-10 w-44 h-44 bg-cyan-400/20 rounded-full blur-3xl pointer-events-none"></div>
+
+        <!-- Butterfly accent in top right (matches design image) -->
+        <div class="absolute top-4 right-5 text-cyan-200/90 animate-butterfly pointer-events-none text-3xl">
+          <i class="fa-solid fa-butterfly drop-shadow-lg"></i>
+        </div>
+
+        <!-- Location & Alerts -->
+        <div class="relative z-10">
+          <div class="flex items-center justify-between mb-2">
+            <div>
+              <h2 id="cityName" class="text-2xl sm:text-3xl font-bold tracking-tight text-white drop-shadow">Kozhikode</h2>
+              <p id="currentDate" class="text-xs sm:text-sm text-white/80 font-medium">Tuesday, Oct 27 • Live</p>
+            </div>
+            <!-- Alert Badge -->
+            <div id="alertBadge" class="flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider bg-emerald-500/80 text-white border border-emerald-300/40 shadow-lg shrink-0">
+              <i class="fa-solid fa-shield-halved"></i>
+              <span id="alertText">Normal Watch</span>
+            </div>
+          </div>
+
+          <!-- Alert Banner Strip -->
+          <div id="alertBanner" class="mt-2 p-2.5 rounded-xl bg-amber-500/20 border border-amber-400/40 text-xs text-amber-100 flex items-start gap-2 hidden">
+            <i class="fa-solid fa-circle-info text-amber-300 mt-0.5"></i>
+            <span id="alertDesc">Precipitation notice.</span>
+          </div>
+        </div>
+
+        <!-- Center Temperature & Condition Display -->
+        <div class="my-6 relative z-10">
+          <div class="inline-block bg-white/10 backdrop-blur-md rounded-2xl p-6 border border-white/20 shadow-xl min-w-[210px]">
+            <div class="flex items-baseline">
+              <span id="currentTemp" class="temp-number text-6xl sm:text-7xl font-light tracking-tighter text-white drop-shadow-md">28</span>
+              <span class="text-3xl sm:text-4xl font-light text-white/90 ml-1">°c</span>
+            </div>
+            <p id="weatherCondition" class="text-lg sm:text-xl font-bold tracking-widest text-white uppercase mt-2 drop-shadow">LIGHT RAIN</p>
+          </div>
+        </div>
+
+        <!-- Bottom Icon & Today Range -->
+        <div class="flex items-end justify-between relative z-10 pt-4 border-t border-white/15">
+          <div class="flex items-center gap-3">
+            <div id="weatherIconContainer" class="text-5xl sm:text-6xl text-cyan-200 drop-shadow-lg animate-float">
+              <i class="fa-solid fa-cloud-showers-heavy"></i>
+            </div>
+            <div>
+              <p class="text-xs text-white/70 uppercase font-semibold">Feels Like</p>
+              <p id="feelsLikeTemp" class="text-lg font-bold text-white">30°C</p>
+            </div>
+          </div>
+
+          <div class="text-right">
+            <p class="text-xs text-white/70 uppercase font-semibold">Today's Range</p>
+            <p class="text-sm font-medium text-white/90">
+              <span class="text-red-300"><i class="fa-solid fa-arrow-up text-xs"></i> <span id="maxTemp">31°C</span></span>
+              <span class="mx-1 text-white/40">|</span>
+              <span class="text-cyan-300"><i class="fa-solid fa-arrow-down text-xs"></i> <span id="minTemp">24°C</span></span>
+            </p>
+          </div>
+        </div>
+
+        <!-- Cloud Graphic Accent -->
+        <div class="absolute -bottom-8 -right-8 opacity-40 pointer-events-none text-white text-9xl blur-[1px]">
+          <i class="fa-solid fa-cloud"></i>
+        </div>
+      </div>
+
+      <!-- RIGHT FROSTED GLASS CARD -->
+      <div class="lg:col-span-7 flex flex-col justify-between glass-card rounded-3xl p-6 sm:p-8 relative overflow-hidden min-h-[440px]">
+        
+        <!-- Header -->
+        <div class="flex flex-wrap items-center justify-between gap-3 mb-4 pb-3 border-b border-white/20">
+          <div>
+            <h3 class="text-lg sm:text-xl font-bold tracking-wide uppercase text-white/90">Hourly Forecast & Rain Depth</h3>
+            <p class="text-xs text-white/70">Hourly temp, precipitation chances (%), and accumulation depth (mm)</p>
+          </div>
+          <div class="flex items-center gap-2 text-xs bg-white/10 px-3 py-1.5 rounded-full border border-white/20">
+            <span class="flex items-center gap-1"><i class="fa-solid fa-droplet text-cyan-300"></i> Chance %</span>
+            <span class="mx-1 text-white/30">|</span>
+            <span class="flex items-center gap-1"><i class="fa-solid fa-ruler-vertical text-blue-300"></i> Depth (mm)</span>
+          </div>
+        </div>
+
+        <!-- Hourly Forecast Cards Scroll Container -->
+        <div id="hourlyContainer" class="flex gap-4 overflow-x-auto py-3 custom-scrollbar snap-x scroll-smooth mb-4">
+          <!-- Dynamically populated -->
+        </div>
+
+        <!-- Metrics Grid -->
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-2">
+          
+          <div class="bg-white/10 backdrop-blur-md rounded-2xl p-3 border border-white/15 flex flex-col justify-between">
+            <span class="text-xs text-white/70 flex items-center gap-1.5 font-medium"><i class="fa-solid fa-wind text-cyan-300"></i> Wind Speed</span>
+            <div class="mt-2">
+              <span id="windSpeed" class="text-lg font-bold">14</span> <span class="text-xs text-white/80">km/h</span>
+            </div>
+            <p id="windDir" class="text-[10px] text-white/60 mt-0.5">NW Direction</p>
+          </div>
+
+          <div class="bg-white/10 backdrop-blur-md rounded-2xl p-3 border border-white/15 flex flex-col justify-between">
+            <span class="text-xs text-white/70 flex items-center gap-1.5 font-medium"><i class="fa-solid fa-droplet text-blue-300"></i> Humidity</span>
+            <div class="mt-2">
+              <span id="humidity" class="text-lg font-bold">84</span> <span class="text-xs text-white/80">%</span>
+            </div>
+            <p id="dewPoint" class="text-[10px] text-white/60 mt-0.5">Dew pt: 22°C</p>
+          </div>
+
+          <div class="bg-white/10 backdrop-blur-md rounded-2xl p-3 border border-white/15 flex flex-col justify-between">
+            <span class="text-xs text-white/70 flex items-center gap-1.5 font-medium"><i class="fa-solid fa-cloud-showers-water text-indigo-300"></i> Rain Depth</span>
+            <div class="mt-2">
+              <span id="precipTotal" class="text-lg font-bold">4.2</span> <span class="text-xs text-white/80">mm</span>
+            </div>
+            <p class="text-[10px] text-white/60 mt-0.5">Expected Today</p>
+          </div>
+
+          <div class="bg-white/10 backdrop-blur-md rounded-2xl p-3 border border-white/15 flex flex-col justify-between">
+            <span class="text-xs text-white/70 flex items-center gap-1.5 font-medium"><i class="fa-solid fa-gauge-high text-yellow-300"></i> Pressure</span>
+            <div class="mt-2">
+              <span id="pressure" class="text-lg font-bold">1011</span> <span class="text-xs text-white/80">hPa</span>
+            </div>
+            <p class="text-[10px] text-white/60 mt-0.5">Normal air pressure</p>
+          </div>
+
+        </div>
+
+        <!-- Weather Advice Footer -->
+        <div class="mt-4 pt-3 border-t border-white/15 flex items-center justify-between text-xs text-white/80">
+          <span class="flex items-center gap-2">
+            <i class="fa-solid fa-umbrella text-cyan-300 text-sm"></i>
+            <span id="weatherTip">Precipitation likely. Bring an umbrella when going outdoors.</span>
+          </span>
+          <span id="lastUpdated" class="text-[10px] text-white/50 hidden sm:inline">Updated just now</span>
+        </div>
+
+      </div>
+
+    </main>
+
+    <!-- Footer -->
+    <footer class="mt-6 text-center text-xs text-white/60 py-2 flex items-center justify-between border-t border-white/10">
+      <p>© 2026 Live Atmospheric Weather Engine</p>
+      <div class="flex gap-4">
+        <span class="hover:text-white transition cursor-pointer" onclick="fetchWeatherData(currentLat, currentLon, currentCityName)"><i class="fa-solid fa-rotate-right mr-1"></i>Refresh Data</span>
+      </div>
+    </footer>
+
+  </div>
+
+  <!-- JAVASCRIPT: DATA & ANIMATED CANVAS ENGINE -->
+  <script>
+    // --- STATE ---
+    let currentLat = 11.2588; // Default Kozhikode
+    let currentLon = 75.7804;
+    let currentCityName = "Kozhikode";
+    let isNight = false;
+    let currentConditionCode = 61; // Rain default
+
+    // --- DOM REFERENCES ---
+    const searchInput = document.getElementById('searchInput');
+    const searchResults = document.getElementById('searchResults');
+    const geoBtn = document.getElementById('geoBtn');
+    const hourlyContainer = document.getElementById('hourlyContainer');
+
+    const cityNameEl = document.getElementById('cityName');
+    const currentDateEl = document.getElementById('currentDate');
+    const currentTempEl = document.getElementById('currentTemp');
+    const weatherConditionEl = document.getElementById('weatherCondition');
+    const feelsLikeTempEl = document.getElementById('feelsLikeTemp');
+    const maxTempEl = document.getElementById('maxTemp');
+    const minTempEl = document.getElementById('minTemp');
+    const weatherIconContainer = document.getElementById('weatherIconContainer');
+    const alertBadge = document.getElementById('alertBadge');
+    const alertText = document.getElementById('alertText');
+    const alertBanner = document.getElementById('alertBanner');
+    const alertDesc = document.getElementById('alertDesc');
+    const windSpeedEl = document.getElementById('windSpeed');
+    const windDirEl = document.getElementById('windDir');
+    const humidityEl = document.getElementById('humidity');
+    const dewPointEl = document.getElementById('dewPoint');
+    const precipTotalEl = document.getElementById('precipTotal');
+    const pressureEl = document.getElementById('pressure');
+    const weatherTipEl = document.getElementById('weatherTip');
+    const lastUpdatedEl = document.getElementById('lastUpdated');
+
+    // --- INITIALIZATION ---
+    window.addEventListener('load', () => {
+      initCanvas();
+      setupEventListeners();
+      updateDateDisplay();
+
+      if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(
+          (pos) => {
+            currentLat = pos.coords.latitude;
+            currentLon = pos.coords.longitude;
+            reverseGeocode(currentLat, currentLon);
+          },
+          () => {
+            fetchWeatherData(currentLat, currentLon, currentCityName);
+          }
+        );
+      } else {
+        fetchWeatherData(currentLat, currentLon, currentCityName);
+      }
+    });
+
+    function updateDateDisplay() {
+      const options = { weekday: 'long', month: 'short', day: 'numeric' };
+      const now = new Date();
+      currentDateEl.innerText = `${now.toLocaleDateString('en-US', options)} • Live`;
+    }
+
+    // --- OPEN-METEO API FETCHING ---
+    async function fetchWeatherData(lat, lon, cityName) {
+      currentLat = lat;
+      currentLon = lon;
+      currentCityName = cityName;
+      cityNameEl.innerText = cityName;
+
+      const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,relative_humidity_2m,apparent_temperature,is_day,precipitation,rain,weather_code,surface_pressure,wind_speed_10m,wind_direction_10m&hourly=temperature_2m,precipitation_probability,precipitation,weather_code&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum,precipitation_probability_max&timezone=auto`;
+
+      try {
+        const res = await fetch(url);
+        const data = await res.json();
+        parseAndUpdateUI(data);
+      } catch (err) {
+        console.error("API Fetch Error, loading fallback", err);
+        renderFallbackData();
+      }
+    }
+
+    async function reverseGeocode(lat, lon) {
+      try {
+        const res = await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${lat},${lon}&count=1&language=en&format=json`);
+        const data = await res.json();
+        if (data.results && data.results.length > 0) {
+          fetchWeatherData(lat, lon, data.results[0].name);
+        } else {
+          fetchWeatherData(lat, lon, "My Location");
+        }
+      } catch {
+        fetchWeatherData(lat, lon, "My Location");
+      }
+    }
+
+    function parseAndUpdateUI(data) {
+      const current = data.current;
+      const daily = data.daily;
+      const hourly = data.hourly;
+
+      isNight = current.is_day === 0;
+
+      const tempC = Math.round(current.temperature_2m);
+      currentTempEl.innerText = tempC;
+      feelsLikeTempEl.innerText = `${Math.round(current.apparent_temperature)}°C`;
+      maxTempEl.innerText = `${Math.round(daily.temperature_2m_max[0])}°C`;
+      minTempEl.innerText = `${Math.round(daily.temperature_2m_min[0])}°C`;
+
+      windSpeedEl.innerText = Math.round(current.wind_speed_10m);
+      windDirEl.innerText = `${getCardinalDirection(current.wind_direction_10m)} Direction`;
+      humidityEl.innerText = current.relative_humidity_2m;
+      dewPointEl.innerText = `Dew pt: ${Math.round(tempC - ((100 - current.relative_humidity_2m) / 5))}°C`;
+      precipTotalEl.innerText = (daily.precipitation_sum[0] || 0).toFixed(1);
+      pressureEl.innerText = Math.round(current.surface_pressure);
+
+      currentConditionCode = current.weather_code;
+      const conditionInfo = getWeatherConditionMeta(currentConditionCode);
+      
+      weatherConditionEl.innerText = conditionInfo.label;
+      weatherIconContainer.innerHTML = `<i class="${conditionInfo.icon}"></i>`;
+      weatherTipEl.innerText = conditionInfo.tip;
+
+      evaluateWeatherAlerts(daily.precipitation_sum[0], daily.precipitation_probability_max[0], current.wind_speed_10m, currentConditionCode);
+      renderHourlyForecast(hourly);
+
+      lastUpdatedEl.innerText = `Updated ${new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}`;
+
+      // Reset & Re-initialize Canvas Effects for new weather state
+      resetCanvasParticles();
+    }
+
+    function renderHourlyForecast(hourly) {
+      hourlyContainer.innerHTML = '';
+      const nowHour = new Date().getHours();
+      
+      for (let i = nowHour; i < nowHour + 24; i++) {
+        if (!hourly.time[i]) break;
+
+        const timeStr = new Date(hourly.time[i]).toLocaleTimeString([], { hour: 'numeric', hour12: true });
+        const temp = Math.round(hourly.temperature_2m[i]);
+        const rainProb = hourly.precipitation_probability ? hourly.precipitation_probability[i] : 0;
+        const rainDepth = hourly.precipitation ? hourly.precipitation[i].toFixed(1) : "0.0";
+        const code = hourly.weather_code[i];
+        const iconClass = getWeatherConditionMeta(code).icon;
+
+        let depthColor = "text-white/70";
+        if (parseFloat(rainDepth) > 5) depthColor = "text-red-300 font-bold";
+        else if (parseFloat(rainDepth) > 2) depthColor = "text-yellow-300 font-semibold";
+        else if (parseFloat(rainDepth) > 0) depthColor = "text-cyan-300";
+
+        const card = document.createElement('div');
+        card.className = "flex-shrink-0 w-24 bg-white/10 backdrop-blur-md border border-white/20 rounded-2xl p-3 flex flex-col items-center justify-between gap-2 text-center snap-start hover:bg-white/20 transition cursor-pointer";
+        card.innerHTML = `
+          <span class="text-xs font-medium text-white/80">${i === nowHour ? 'Now' : timeStr}</span>
+          <div class="text-2xl text-cyan-200 my-1"><i class="${iconClass}"></i></div>
+          <span class="text-base font-bold text-white">${temp}°C</span>
+          <div class="w-full pt-2 border-t border-white/10 flex flex-col gap-1 text-[11px]">
+            <span class="flex items-center justify-center gap-1 text-cyan-200" title="Rain probability">
+              <i class="fa-solid fa-droplet text-[9px]"></i> ${rainProb}%
+            </span>
+            <span class="flex items-center justify-center gap-1 ${depthColor}" title="Precipitation depth in mm">
+              <i class="fa-solid fa-ruler-vertical text-[9px]"></i> ${rainDepth}mm
+            </span>
+          </div>
+        `;
+        hourlyContainer.appendChild(card);
+      }
+    }
+
+    function getWeatherConditionMeta(code) {
+      if (code === 0) return { label: 'CLEAR SKY', icon: isNight ? 'fa-solid fa-moon' : 'fa-solid fa-sun', tip: 'Clear skies! Enjoy your day outdoor.' };
+      if (code === 1 || code === 2) return { label: 'PARTLY CLOUDY', icon: isNight ? 'fa-solid fa-cloud-moon' : 'fa-solid fa-cloud-sun', tip: 'Pleasant weather with mild cloud cover.' };
+      if (code === 3) return { label: 'OVERCAST', icon: 'fa-solid fa-cloud', tip: 'Grey skies today. Slightly cooler temperatures.' };
+      if (code === 45 || code === 48) return { label: 'FOGGY / MIST', icon: 'fa-solid fa-smog', tip: 'Reduced visibility on roads. Drive carefully!' };
+      if (code >= 51 && code <= 55) return { label: 'LIGHT DRIZZLE', icon: 'fa-solid fa-cloud-rain', tip: 'Minor rain shower expected. Light jacket recommended.' };
+      if (code >= 61 && code <= 63) return { label: 'LIGHT RAIN', icon: 'fa-solid fa-cloud-showers-heavy', tip: 'Wet roads anticipated. Keep an umbrella handy.' };
+      if (code >= 65 && code <= 67) return { label: 'HEAVY RAIN', icon: 'fa-solid fa-cloud-showers-water', tip: 'Heavy rain warning. Expect water pooling on streets.' };
+      if (code >= 71 && code <= 77) return { label: 'SNOWING', icon: 'fa-regular fa-snowflake', tip: 'Snowfall active. Bundle up in warm layers!' };
+      if (code >= 80 && code <= 82) return { label: 'RAIN SHOWERS', icon: 'fa-solid fa-cloud-sun-rain', tip: 'Passing rain showers throughout the day.' };
+      if (code >= 95) return { label: 'THUNDERSTORM', icon: 'fa-solid fa-cloud-bolt', tip: 'Severe storm alert! Stay indoors and stay safe.' };
+
+      return { label: 'LIGHT RAIN', icon: 'fa-solid fa-cloud-showers-heavy', tip: 'Carry an umbrella with you.' };
+    }
+
+    function evaluateWeatherAlerts(precipSum, precipProb, windSpeed, code) {
+      alertBadge.className = "flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider border shadow-lg transition-all shrink-0";
+      
+      const isThunderstorm = code >= 95;
+      const isHeavyRain = (code >= 65 && code <= 67) || (code >= 82 && code <= 86);
+      const isModerateRain = (code >= 61 && code <= 63) || (code >= 51 && code <= 55) || code === 80;
+
+      // RED ALERT: Severe storms, >35mm daily rain depth, or >50 km/h wind gusts
+      if (isThunderstorm || precipSum > 35 || windSpeed > 50) {
+        alertBadge.classList.add("bg-red-600", "text-white", "border-red-400", "animate-pulse");
+        alertText.innerText = "RED ALERT";
+        alertBanner.className = "mt-2 p-2.5 rounded-xl bg-red-500/30 border border-red-400/50 text-xs text-red-100 flex items-start gap-2";
+        alertDesc.innerText = "Severe weather warning! Heavy thunderstorm / intense precipitation depth. Stay indoors.";
+        alertBanner.classList.remove("hidden");
+      } 
+      // ORANGE ALERT: Heavy rainfall conditions or >15mm total accumulation
+      else if (isHeavyRain || precipSum > 15 || (precipProb > 80 && precipSum > 5)) {
+        alertBadge.classList.add("bg-orange-500", "text-slate-950", "border-orange-300", "animate-pulse");
+        alertText.innerText = "ORANGE ALERT";
+        alertBanner.className = "mt-2 p-2.5 rounded-xl bg-orange-500/25 border border-orange-400/50 text-xs text-orange-100 flex items-start gap-2";
+        alertDesc.innerText = "Moderate to heavy rain alert. High chance of deep rain accumulation.";
+        alertBanner.classList.remove("hidden");
+      } 
+      // YELLOW ALERT: Moderate rain showers or high probability of rain
+      else if (isModerateRain || (precipSum > 3 && precipProb > 40)) {
+        alertBadge.classList.add("bg-yellow-500", "text-slate-950", "border-yellow-300");
+        alertText.innerText = "YELLOW ALERT";
+        alertBanner.className = "mt-2 p-2.5 rounded-xl bg-yellow-500/20 border border-yellow-400/40 text-xs text-yellow-100 flex items-start gap-2";
+        alertDesc.innerText = "Watch advisory: Rain showers and damp conditions anticipated. Carry umbrella.";
+        alertBanner.classList.remove("hidden");
+      } 
+      // NORMAL WATCH: Low rain, clear, overcast, light conditions
+      else {
+        alertBadge.classList.add("bg-emerald-500/80", "text-white", "border-emerald-300/40");
+        alertText.innerText = "NORMAL WATCH";
+        alertBanner.classList.add("hidden");
+      }
+    }
+
+    function getCardinalDirection(angle) {
+      const directions = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
+      return directions[Math.round(angle / 45) % 8];
+    }
+
+    function renderFallbackData() {
+      const mock = {
+        current: { temperature_2m: 28, relative_humidity_2m: 85, apparent_temperature: 30, is_day: isNight ? 0 : 1, weather_code: 61, surface_pressure: 1011, wind_speed_10m: 14, wind_direction_10m: 315 },
+        daily: { temperature_2m_max: [31], temperature_2m_min: [24], precipitation_sum: [8.5], precipitation_probability_max: [80] },
+        hourly: {
+          time: Array.from({length: 24}, (_, i) => new Date(Date.now() + i * 3600000).toISOString()),
+          temperature_2m: [28, 28, 27, 26, 26, 25, 27, 29, 30, 31, 31, 30, 29, 28, 28, 27, 27, 26, 26, 25, 25, 24, 24, 24],
+          precipitation_probability: [75, 80, 85, 90, 60, 40, 20, 10, 15, 30, 50, 65, 70, 75, 80, 60, 40, 30, 20, 10, 5, 0, 0, 0],
+          precipitation: [1.2, 1.8, 2.1, 2.4, 0.8, 0.2, 0.0, 0.0, 0.0, 0.1, 0.5, 1.1, 1.6, 2.0, 1.5, 0.6, 0.1, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+          weather_code: [61, 63, 63, 65, 61, 51, 3, 2, 1, 2, 61, 61, 63, 63, 61, 51, 3, 2, 1, 0, 0, 0, 0, 0]
+        }
+      };
+      parseAndUpdateUI(mock);
+    }
+
+    function setupEventListeners() {
+      let debounceTimer;
+      searchInput.addEventListener('input', (e) => {
+        clearTimeout(debounceTimer);
+        const query = e.target.value.trim();
+        if (query.length < 2) {
+          searchResults.classList.add('hidden');
+          return;
+        }
+
+        debounceTimer = setTimeout(async () => {
+          try {
+            const res = await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(query)}&count=5&language=en&format=json`);
+            const data = await res.json();
+            
+            if (data.results && data.results.length > 0) {
+              searchResults.innerHTML = '';
+              data.results.forEach(loc => {
+                const item = document.createElement('div');
+                item.className = 'px-4 py-3 hover:bg-white/20 cursor-pointer text-sm border-b border-white/10 flex justify-between items-center';
+                item.innerHTML = `
+                  <div>
+                    <span class="font-bold text-white">${loc.name}</span>
+                    <span class="text-xs text-white/70 ml-1.5">${loc.admin1 || ''}, ${loc.country || ''}</span>
+                  </div>
+                  <i class="fa-solid fa-chevron-right text-xs text-white/40"></i>
+                `;
+                item.addEventListener('click', () => {
+                  fetchWeatherData(loc.latitude, loc.longitude, loc.name);
+                  searchResults.classList.add('hidden');
+                  searchInput.value = '';
+                });
+                searchResults.appendChild(item);
+              });
+              searchResults.classList.remove('hidden');
+            } else {
+              searchResults.innerHTML = `<div class="p-3 text-xs text-white/60 text-center">No locations found</div>`;
+              searchResults.classList.remove('hidden');
+            }
+          } catch (err) {
+            console.error("Geocoding failed", err);
+          }
+        }, 300);
+      });
+
+      document.addEventListener('click', (e) => {
+        if (!searchInput.contains(e.target) && !searchResults.contains(e.target)) {
+          searchResults.classList.add('hidden');
+        }
+      });
+
+      geoBtn.addEventListener('click', () => {
+        if (navigator.geolocation) {
+          navigator.geolocation.getCurrentPosition((pos) => {
+            reverseGeocode(pos.coords.latitude, pos.coords.longitude);
+          });
+        }
+      });
+    }
+
+    // =========================================================================
+    // DYNAMIC 60FPS FULLSCREEN HTML5 LIVE CANVAS ANIMATED ATMOSPHERIC ENGINE
+    // =========================================================================
+    let canvas, ctx;
+    let width, height;
+    let rainDrops = [];
+    let rainSplashes = [];
+    let snowFlakes = [];
+    let starField = [];
+    let cloudLayers = [];
+    let fogParticles = [];
+    let nightBokeh = [];
+    let lightningBranches = [];
+    let animationFrameId;
+
+    function initCanvas() {
+      canvas = document.getElementById('weatherCanvas');
+      ctx = canvas.getContext('2d');
+      resizeCanvas();
+      window.addEventListener('resize', resizeCanvas);
+      animateCanvasEngine();
+    }
+
+    function resizeCanvas() {
+      width = canvas.width = window.innerWidth;
+      height = canvas.height = window.innerHeight;
+      resetCanvasParticles();
+    }
+
+    function resetCanvasParticles() {
+      rainDrops = [];
+      rainSplashes = [];
+      snowFlakes = [];
+      starField = [];
+      cloudLayers = [];
+      fogParticles = [];
+      nightBokeh = [];
+      lightningBranches = [];
+
+      const code = currentConditionCode;
+
+      // 1. STAR FIELD (Night conditions)
+      if (isNight) {
+        const starCount = code === 0 ? 250 : 100;
+        for (let i = 0; i < starCount; i++) {
+          starField.push({
+            x: Math.random() * width,
+            y: Math.random() * height * 0.75,
+            radius: Math.random() * 1.5 + 0.5,
+            alpha: Math.random(),
+            twinkleSpeed: Math.random() * 0.02 + 0.005
+          });
+        }
+      }
+
+      // 2. NIGHT BOKEH (Night rain / storm city atmosphere)
+      if (isNight && (code >= 51 || code >= 95)) {
+        const colors = ['rgba(239, 68, 68, 0.4)', 'rgba(245, 158, 11, 0.4)', 'rgba(59, 130, 246, 0.4)', 'rgba(255, 255, 255, 0.3)'];
+        for (let i = 0; i < 25; i++) {
+          nightBokeh.push({
+            x: Math.random() * width,
+            y: height * 0.4 + Math.random() * (height * 0.6),
+            radius: Math.random() * 35 + 15,
+            color: colors[Math.floor(Math.random() * colors.length)],
+            pulseSpeed: Math.random() * 0.02 + 0.01,
+            alpha: Math.random() * 0.5 + 0.2
+          });
+        }
+      }
+
+      // 3. DRIFTING CLOUDS (All non-clear or partial clouds)
+      if (code >= 1) {
+        const cloudCount = code >= 3 || code >= 61 ? 12 : 6;
+        for (let i = 0; i < cloudCount; i++) {
+          cloudLayers.push({
+            x: Math.random() * width,
+            y: Math.random() * (height * 0.45) - 50,
+            scale: Math.random() * 1.2 + 0.8,
+            speed: Math.random() * 0.4 + 0.1,
+            opacity: isNight ? (Math.random() * 0.2 + 0.1) : (Math.random() * 0.35 + 0.15)
+          });
+        }
+      }
+
+      // 4. RAIN & SPLASHES
+      if ((code >= 51 && code <= 67) || (code >= 80 && code <= 82) || code >= 95) {
+        const rainCount = code >= 95 || code >= 65 ? 450 : 250;
+        for (let i = 0; i < rainCount; i++) {
+          rainDrops.push({
+            x: Math.random() * width,
+            y: Math.random() * height,
+            length: Math.random() * 25 + 18,
+            speedY: Math.random() * 14 + 18,
+            speedX: Math.random() * -3 - 1,
+            opacity: Math.random() * 0.4 + 0.3,
+            thickness: Math.random() * 1.8 + 0.8
+          });
+        }
+      }
+
+      // 5. SNOW FLAKES
+      if (code >= 71 && code <= 77) {
+        for (let i = 0; i < 200; i++) {
+          snowFlakes.push({
+            x: Math.random() * width,
+            y: Math.random() * height,
+            radius: Math.random() * 3.5 + 1,
+            speedY: Math.random() * 1.5 + 0.6,
+            speedX: Math.sin(Math.random() * Math.PI) * 1.2,
+            opacity: Math.random() * 0.8 + 0.2
+          });
+        }
+      }
+
+      // 6. FOG / MIST
+      if (code === 45 || code === 48) {
+        for (let i = 0; i < 35; i++) {
+          fogParticles.push({
+            x: Math.random() * width,
+            y: Math.random() * height,
+            radius: Math.random() * 140 + 80,
+            speedX: Math.random() * 0.3 - 0.15,
+            opacity: Math.random() * 0.08 + 0.02
+          });
+        }
+      }
+    }
+
+    // Canvas Background Gradient Renderer
+    function drawAtmosphericBackground() {
+      let grad = ctx.createLinearGradient(0, 0, 0, height);
+      const code = currentConditionCode;
+
+      if (isNight) {
+        if (code >= 95) {
+          // Thunder Night (Deep thunder purple-black)
+          grad.addColorStop(0, '#090a16');
+          grad.addColorStop(0.5, '#12162d');
+          grad.addColorStop(1, '#05060a');
+        } else if (code >= 51 && code <= 67) {
+          // Rain Night (Deep dark blurred city navy)
+          grad.addColorStop(0, '#0b1329');
+          grad.addColorStop(0.5, '#152238');
+          grad.addColorStop(1, '#070b14');
+        } else if (code >= 71 && code <= 77) {
+          // Snow Night
+          grad.addColorStop(0, '#0f172a');
+          grad.addColorStop(0.5, '#1e293b');
+          grad.addColorStop(1, '#090d16');
+        } else {
+          // Clear Starry Night
+          grad.addColorStop(0, '#030712');
+          grad.addColorStop(0.6, '#0f172a');
+          grad.addColorStop(1, '#1e1b4b');
+        }
+      } else {
+        // DAY TIME
+        if (code >= 95) {
+          // Thunderstorm Day (Dark slate overcast)
+          grad.addColorStop(0, '#334155');
+          grad.addColorStop(0.6, '#1e293b');
+          grad.addColorStop(1, '#0f172a');
+        } else if (code >= 51 && code <= 67) {
+          // Rain Day (Atmospheric rainy grey-cyan matching layout image)
+          grad.addColorStop(0, '#334e68');
+          grad.addColorStop(0.5, '#243b53');
+          grad.addColorStop(1, '#102a43');
+        } else if (code >= 71 && code <= 77) {
+          // Snow Day
+          grad.addColorStop(0, '#64748b');
+          grad.addColorStop(0.5, '#94a3b8');
+          grad.addColorStop(1, '#cbd5e1');
+        } else if (code === 0) {
+          // Sunny Clear Day (Vibrant sky gradient)
+          grad.addColorStop(0, '#0284c7');
+          grad.addColorStop(0.5, '#38bdf8');
+          grad.addColorStop(1, '#bae6fd');
+        } else {
+          // Cloudy Day
+          grad.addColorStop(0, '#475569');
+          grad.addColorStop(0.5, '#64748b');
+          grad.addColorStop(1, '#94a3b8');
+        }
+      }
+
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, width, height);
+    }
+
+    // Render Celestial Bodies (Sun + Sunbeams / Moon + Glow)
+    function drawCelestialBodies() {
+      const code = currentConditionCode;
+
+      if (!isNight && (code === 0 || code <= 2)) {
+        // Sun Body
+        const sunX = width * 0.82;
+        const sunY = height * 0.18;
+        
+        // Sunbeams / Lens Flare Rays
+        ctx.save();
+        ctx.translate(sunX, sunY);
+        ctx.rotate(Date.now() * 0.0003);
+        for (let i = 0; i < 8; i++) {
+          ctx.rotate(Math.PI / 4);
+          ctx.fillStyle = 'rgba(255, 253, 231, 0.06)';
+          ctx.beginPath();
+          ctx.moveTo(0, 0);
+          ctx.lineTo(-25, 400);
+          ctx.lineTo(25, 400);
+          ctx.closePath();
+          ctx.fill();
+        }
+        ctx.restore();
+
+        // Sun Core Glow
+        const sunGrad = ctx.createRadialGradient(sunX, sunY, 15, sunX, sunY, 190);
+        sunGrad.addColorStop(0, 'rgba(254, 240, 138, 0.95)');
+        sunGrad.addColorStop(0.3, 'rgba(253, 224, 71, 0.45)');
+        sunGrad.addColorStop(1, 'rgba(253, 224, 71, 0)');
+        ctx.fillStyle = sunGrad;
+        ctx.beginPath();
+        ctx.arc(sunX, sunY, 190, 0, Math.PI * 2);
+        ctx.fill();
+      } else if (isNight && (code === 0 || code <= 2)) {
+        // Moon & Night Glow
+        const moonX = width * 0.82;
+        const moonY = height * 0.18;
+
+        ctx.fillStyle = 'rgba(248, 250, 252, 0.9)';
+        ctx.beginPath();
+        ctx.arc(moonX, moonY, 34, 0, Math.PI * 2);
+        ctx.fill();
+
+        const moonGlow = ctx.createRadialGradient(moonX, moonY, 30, moonX, moonY, 140);
+        moonGlow.addColorStop(0, 'rgba(224, 242, 254, 0.35)');
+        moonGlow.addColorStop(1, 'rgba(224, 242, 254, 0)');
+        ctx.fillStyle = moonGlow;
+        ctx.beginPath();
+        ctx.arc(moonX, moonY, 140, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
+    // Render Procedural Atmospheric Clouds
+    function drawProceduralCloud(x, y, scale, opacity) {
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.scale(scale, scale);
+      ctx.fillStyle = isNight ? `rgba(255, 255, 255, ${opacity * 0.6})` : `rgba(255, 255, 255, ${opacity})`;
+
+      ctx.beginPath();
+      ctx.arc(0, 0, 50, Math.PI * 0.5, Math.PI * 1.5);
+      ctx.arc(50, -30, 45, Math.PI * 1, Math.PI * 1.85);
+      ctx.arc(120, -25, 55, Math.PI * 1.2, Math.PI * 1.95);
+      ctx.arc(170, 0, 40, Math.PI * 1.5, Math.PI * 0.5);
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+    }
+
+    // Render Night Bokeh Lights (for cozy rain-at-night blurred backdrop effect)
+    function drawNightBokeh() {
+      if (!isNight || nightBokeh.length === 0) return;
+      for (let b of nightBokeh) {
+        b.alpha += Math.sin(Date.now() * b.pulseSpeed) * 0.005;
+        ctx.fillStyle = b.color;
+        ctx.beginPath();
+        ctx.arc(b.x, b.y, b.radius, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
+    // Render Lightning for Thunderstorms
+    let lightningFlashTimer = 0;
+    function drawThunderstormEffects() {
+      if (currentConditionCode >= 95) {
+        lightningFlashTimer++;
+        if (lightningFlashTimer % 140 === 0 || Math.random() < 0.012) {
+          // Screen Flash
+          ctx.fillStyle = 'rgba(255, 255, 255, 0.35)';
+          ctx.fillRect(0, 0, width, height);
+
+          // Draw Lightning Bolt
+          let startX = Math.random() * width;
+          let startY = 0;
+          ctx.strokeStyle = 'rgba(255, 255, 255, 0.9)';
+          ctx.lineWidth = 3;
+          ctx.beginPath();
+          ctx.moveTo(startX, startY);
+
+          for (let i = 0; i < 6; i++) {
+            startX += (Math.random() - 0.5) * 80;
+            startY += height / 6;
+            ctx.lineTo(startX, startY);
+          }
+          ctx.stroke();
+        }
+      }
+    }
+
+    // Main 60FPS Canvas Animation Loop
+    function animateCanvasEngine() {
+      drawAtmosphericBackground();
+      drawCelestialBodies();
+      drawNightBokeh();
+
+      const code = currentConditionCode;
+
+      // 1. STAR FIELD
+      if (isNight && starField.length > 0) {
+        for (let s of starField) {
+          s.alpha += s.twinkleSpeed;
+          if (s.alpha > 1 || s.alpha < 0.2) s.twinkleSpeed = -s.twinkleSpeed;
+          ctx.fillStyle = `rgba(255, 255, 255, ${Math.abs(s.alpha)})`;
+          ctx.beginPath();
+          ctx.arc(s.x, s.y, s.radius, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+
+      // 2. DRIFTING CLOUDS
+      for (let c of cloudLayers) {
+        drawProceduralCloud(c.x, c.y, c.scale, c.opacity);
+        c.x += c.speed;
+        if (c.x - 200 > width) c.x = -250;
+      }
+
+      // 3. RAIN DROPS & WATER SPLASHES
+      if (rainDrops.length > 0) {
+        ctx.strokeStyle = isNight ? 'rgba(186, 230, 253, 0.6)' : 'rgba(255, 255, 255, 0.7)';
+        ctx.lineCap = 'round';
+
+        for (let p of rainDrops) {
+          ctx.lineWidth = p.thickness;
+          ctx.beginPath();
+          ctx.moveTo(p.x, p.y);
+          ctx.lineTo(p.x + p.speedX, p.y + p.length);
+          ctx.stroke();
+
+          p.x += p.speedX;
+          p.y += p.speedY;
+
+          if (p.y > height) {
+            // Spawn splash ripple at ground
+            if (Math.random() < 0.2) {
+              rainSplashes.push({ x: p.x, y: height - 10, radius: 1, alpha: 0.8 });
+            }
+            p.y = -p.length;
+            p.x = Math.random() * width;
+          }
+        }
+
+        // Render Ground Splashes
+        for (let i = rainSplashes.length - 1; i >= 0; i--) {
+          let sp = rainSplashes[i];
+          ctx.strokeStyle = `rgba(255, 255, 255, ${sp.alpha})`;
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          ctx.ellipse(sp.x, sp.y, sp.radius * 2, sp.radius, 0, 0, Math.PI * 2);
+          ctx.stroke();
+
+          sp.radius += 0.8;
+          sp.alpha -= 0.04;
+          if (sp.alpha <= 0) rainSplashes.splice(i, 1);
+        }
+      }
+
+      // 4. SNOW PARTICLES
+      if (snowFlakes.length > 0) {
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.85)';
+        for (let s of snowFlakes) {
+          ctx.beginPath();
+          ctx.arc(s.x, s.y, s.radius, 0, Math.PI * 2);
+          ctx.fill();
+
+          s.y += s.speedY;
+          s.x += Math.sin(s.y * 0.02) * 0.9;
+
+          if (s.y > height) {
+            s.y = -5;
+            s.x = Math.random() * width;
+          }
+        }
+      }
+
+      // 5. FOG / MIST PARTICLES
+      if (fogParticles.length > 0) {
+        for (let f of fogParticles) {
+          const fogGrad = ctx.createRadialGradient(f.x, f.y, 10, f.x, f.y, f.radius);
+          fogGrad.addColorStop(0, `rgba(226, 232, 240, ${f.opacity})`);
+          fogGrad.addColorStop(1, 'rgba(226, 232, 240, 0)');
+
+          ctx.fillStyle = fogGrad;
+          ctx.beginPath();
+          ctx.arc(f.x, f.y, f.radius, 0, Math.PI * 2);
+          ctx.fill();
+
+          f.x += f.speedX;
+          if (f.x - f.radius > width) f.x = -f.radius;
+          if (f.x + f.radius < 0) f.x = width + f.radius;
+        }
+      }
+
+      drawThunderstormEffects();
+
+      animationFrameId = requestAnimationFrame(animateCanvasEngine);
+    }
+  </script>
+</body>
+</html
